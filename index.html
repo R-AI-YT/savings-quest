@@ -7,15 +7,37 @@
 <h2 style="margin-top:20px">クエスト達成を記録</h2><div class="muted">各クエストは1日1回。タップ後に端末内へ自動保存。</div><div id="quests"></div>
 <h2 style="margin-top:20px">貯金スコアを更新</h2><div class="note">銀行残高ではなく、予定引落を差し引いた管理用スコアです。確定した金額だけ更新してください。</div><label for="newBalance">新しいスコア（円）</label><input id="newBalance" type="number" min="0" step="1" inputmode="numeric"><button id="updateBalance" class="full" style="margin-top:9px">スコアを記録・自動保存</button></section>
 <section class="card"><h2>② ChatGPTに戻る</h2><p class="muted">ChatGPTからこのページを開いた場合は「前の画面に戻る」を使用してください。Web版への新規移動は行いません。</p><button id="shareChat" class="full">📤 ChatGPTに共有（Android）</button><button id="returnChat" class="secondary full" style="margin-top:9px">📋 データをコピーして前の画面に戻る</button><button id="openChat" class="secondary full" style="margin-top:9px">前の画面に戻る</button><label for="chatLink">ChatGPT会話URL（保存用・自動復帰には使用しません）</label><input id="chatLink" type="url" placeholder="https://chatgpt.com/c/..."><button id="saveLink" class="secondary full" style="margin-top:8px">戻り先を保存</button><div class="note" style="margin-top:10px">ブラウザの「戻る」で元のChatGPT画面に戻る方式です。ChatGPT内のブラウザから開いた場合に有効ですが、Chromeなど別アプリで開いた場合は元のChatGPTアプリへ自動復帰できません。その場合はAndroidのアプリ切替からChatGPTへ戻ってください。</div></section>
-<section class="card"><h2>③ セーブ・ロードと達成度</h2><div id="achievements"></div><div class="actions" style="margin-top:15px"><button id="export">バックアップ保存</button><button class="secondary" id="importButton">バックアップ読込</button></div><input type="file" id="importFile" accept=".json,application/json" hidden><button class="secondary full" id="copySave" style="margin-top:9px">セーブJSONをコピー</button><p class="muted">以前のObsidian用SAVE70 JSONも読み込めます。初期データの50XPテストは本番に混ぜないでください。</p></section>
+<section class="card"><h2>③ セーブ・ロードと達成度</h2><div id="achievements"></div><div class="actions" style="margin-top:15px"><button id="export">バックアップ保存</button><button class="secondary" id="importButton">バックアップ読込</button></div><input type="file" id="importFile" accept=".json,application/json" hidden><button class="secondary full" id="restorePrevious" style="margin-top:9px">↩ 直前のデータに戻す</button><div class="muted" id="recoveryStatus" style="margin-top:7px"></div><button class="secondary full" id="copySave" style="margin-top:9px">セーブJSONをコピー</button><p class="muted">以前のObsidian用SAVE70 JSONも読み込めます。初期データの50XPテストは本番に混ぜないでください。</p></section>
 <section class="card"><h2>④ 記録履歴</h2><div id="log" class="log"></div></section>
 <footer>このアプリの自動保存先はブラウザのlocalStorageです。ChatGPTとは自動同期しません。別ブラウザ・別URL・端末変更時にはバックアップの読み込みが必要です。AndroidでHTMLファイルを直接開く場合、自動保存が制限されることがあります。定期的にバックアップしてください。</footer><div id="notice" role="status"></div>
 <script>(()=>{'use strict';
-const KEY='savings-quest-save70-v1',DEFAULT={version:1,code:'SAVE70',goal:700000,balance:150000,xp:0,level:1,achievements:['adventure_started'],questsCompleted:0,updated:'2026-10-23',test:false,daily:{},log:[],chatLink:''};
+const KEY='savings-quest-save70-v1',RECOVERY_KEY=KEY+'-recovery',DEFAULT={version:1,code:'SAVE70',goal:700000,balance:150000,xp:0,level:1,achievements:['adventure_started'],questsCompleted:0,updated:'2026-10-23',test:false,daily:{},log:[],chatLink:''};
 const Q=[['cook','自炊した',30],['no_spend','不要な買い物を避けた',25],['expense','支出を記録した',20],['study','SAPを20分学習した',30],['sleep','7時間以上眠った',20]];
 const A=[['adventure_started','冒険の始まり'],['balance_200k','貯金20万円'],['xp_300','累計300XP'],['quests_4','クエスト4回達成'],['balance_500k','貯金50万円'],['goal_700k','70万円達成']];
 const $=id=>document.getElementById(id),fmt=n=>n.toLocaleString('ja-JP'),today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
-let data;function valid(d){return d&&d.version===1&&d.code==='SAVE70'&&Number.isSafeInteger(d.balance)&&d.balance>=0&&Number.isSafeInteger(d.xp)&&d.xp>=0&&Number.isSafeInteger(d.questsCompleted)&&d.questsCompleted>=0&&Array.isArray(d.achievements)}
+let data;function valid(d){
+ if(!d||typeof d!=='object'||Array.isArray(d)||d.version!==1||d.code!=='SAVE70'||d.goal!==700000)return false;
+ for(const k of ['balance','xp','questsCompleted'])if(!Number.isSafeInteger(d[k])||d[k]<0)return false;
+ if(!Number.isSafeInteger(d.level)||d.level<1||d.level!==Math.floor(d.xp/100)+1)return false;
+ if(!Array.isArray(d.achievements)||d.achievements.some(x=>typeof x!=='string'||x.length>100))return false;
+ if(typeof d.updated!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d.updated)||typeof d.test!=='boolean')return false;
+ if(!d.daily||typeof d.daily!=='object'||Array.isArray(d.daily))return false;
+ if(Object.entries(d.daily).some(([k,v])=>!/^\d{4}-\d{2}-\d{2}$/.test(k)||!Array.isArray(v)||v.some(x=>typeof x!=='string'||x.length>100)))return false;
+ if(!Array.isArray(d.log)||d.log.some(x=>!x||typeof x.date!=='string'||typeof x.text!=='string'))return false;
+ if(typeof d.chatLink!=='string')return false;
+ return true;
+}
+function recoveryStatus(){let exists=false;try{let s=localStorage.getItem(RECOVERY_KEY);exists=!!s&&valid(JSON.parse(s))}catch{}$('restorePrevious').disabled=!exists;$('recoveryStatus').textContent=exists?'復元可能な直前のデータがあります':'復元用の直前データはありません'}
+function snapshotCurrent(){const serialized=JSON.stringify(data);localStorage.setItem(RECOVERY_KEY,serialized)}
+function restoreCandidate(candidate,description){
+ if(!valid(candidate))throw Error('SAVE70形式が不正です');
+ const next=JSON.parse(JSON.stringify(candidate));
+ const previous=JSON.stringify(data);
+ // First persist the rollback snapshot, then the replacement; never modify memory before both succeed.
+ localStorage.setItem(RECOVERY_KEY,previous);
+ try{localStorage.setItem(KEY,JSON.stringify(next))}catch(e){try{localStorage.setItem(RECOVERY_KEY,previous)}catch{}throw e}
+ data=next;log(description);save();recoveryStatus();
+}
 function load(){try{let s=localStorage.getItem(KEY);if(s){let d=JSON.parse(s);if(valid(d))return {...DEFAULT,...d,daily:d.daily||{},log:Array.isArray(d.log)?d.log:[]}}}catch{}return JSON.parse(JSON.stringify(DEFAULT))}
 function notify(t){$('notice').textContent=t;$('notice').style.display='block';clearTimeout(notify.timer);notify.timer=setTimeout(()=>$('notice').style.display='none',4500)}
 function log(t){data.log.unshift({date:new Date().toLocaleString('ja-JP'),text:t});data.log=data.log.slice(0,100)}
@@ -43,6 +65,7 @@ $('saveLink').onclick=()=>{let v=$('chatLink').value.trim();if(v){try{let u=new 
 $('export').onclick=()=>{let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});let u=URL.createObjectURL(blob);let a=document.createElement('a');a.href=u;a.download='SAVE70-'+today()+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);notify('バックアップを書き出しました')};
 $('copySave').onclick=async()=>notify(await copy(JSON.stringify(data))?'セーブJSONをコピーしました':'コピーに失敗しました');
 $('importButton').onclick=()=>$('importFile').click();
-$('importFile').onchange=async e=>{let f=e.target.files?.[0];if(!f)return;try{let d=JSON.parse(await f.text());if(!valid(d))throw Error('SAVE70形式ではありません');if(d.test===true&&!confirm('テスト用セーブデータです。本番に読み込みますか？'))return;if(!confirm('現在のデータを上書きします。よろしいですか？'))return;data={...DEFAULT,...d,daily:d.daily||{},log:Array.isArray(d.log)?d.log:[]};log('バックアップをロード');save();notify('ロード完了')}catch(err){notify('ロード失敗：'+err.message)}finally{e.target.value=''}};
-data=load();data.level=Math.floor(data.xp/100)+1;render();$('saveStatus').textContent='● ロード完了（端末内）';
+$('importFile').onchange=async e=>{let f=e.target.files?.[0];if(!f)return;try{let d=JSON.parse(await f.text());d={...DEFAULT,...d,daily:d.daily??{},log:d.log??[]};if(!valid(d))throw Error('SAVE70形式または項目の値が不正です');if(d.test===true&&!confirm('テスト用セーブデータです。本番に読み込みますか？'))return;if(!confirm('復元するデータ：\n貯金 '+fmt(d.balance)+'円 / XP '+fmt(d.xp)+' / LV '+d.level+'\n更新日 '+d.updated+'\n\n現在のデータを退避して復元しますか？'))return;restoreCandidate(d,'バックアップをロード');notify('ロード完了。直前のデータも保存しました')}catch(err){notify('ロード失敗：'+err.message)}finally{e.target.value=''}};
+$('restorePrevious').onclick=()=>{try{let raw=localStorage.getItem(RECOVERY_KEY);if(!raw)throw Error('復元データがありません');let d=JSON.parse(raw);if(!valid(d))throw Error('復元データが不正です');if(!confirm('直前のデータに戻しますか？\n貯金 '+fmt(d.balance)+'円 / XP '+fmt(d.xp)+' / LV '+d.level))return;restoreCandidate(d,'直前のデータを復元');notify('直前のデータに戻しました')}catch(e){notify('復元できません：'+e.message)}};
+ data=load();data.level=Math.floor(data.xp/100)+1;render();recoveryStatus();$('saveStatus').textContent='● ロード完了（端末内）';
 })();</script></body></html>
